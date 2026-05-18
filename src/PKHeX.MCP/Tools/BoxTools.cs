@@ -247,14 +247,15 @@ public static class BoxTools
             try
             {
                 var lines = instructions.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-                var parsed = StringInstruction.GetFilters((IReadOnlyList<string>)lines);
+                var mods = StringInstruction.GetInstructions((IReadOnlyList<string>)lines);
+                var noFilters = Array.Empty<StringInstruction>();
                 int modified = 0;
                 for (int b = 0; b < sav.BoxCount; b++)
                     for (int s = 0; s < sav.BoxSlotCount; s++)
                     {
                         var pk = sav.GetBoxSlotAtIndex(b, s);
                         if (pk.Species == 0) continue;
-                        BatchEditing.TryModify(pk, parsed, parsed);
+                        BatchEditing.TryModify(pk, noFilters, mods);
                         sav.SetBoxSlotAtIndex(pk, b, s);
                         modified++;
                     }
@@ -275,13 +276,14 @@ public static class BoxTools
             try
             {
                 var lines = instructions.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-                var parsed = StringInstruction.GetFilters((IReadOnlyList<string>)lines);
+                var mods = StringInstruction.GetInstructions((IReadOnlyList<string>)lines);
+                var noFilters = Array.Empty<StringInstruction>();
                 int modified = 0;
                 for (int s = 0; s < sav.BoxSlotCount; s++)
                 {
                     var pk = sav.GetBoxSlotAtIndex(box, s);
                     if (pk.Species == 0) continue;
-                    BatchEditing.TryModify(pk, parsed, parsed);
+                    BatchEditing.TryModify(pk, noFilters, mods);
                     sav.SetBoxSlotAtIndex(pk, box, s);
                     modified++;
                 }
