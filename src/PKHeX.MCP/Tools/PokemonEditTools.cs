@@ -65,7 +65,10 @@ public static class PokemonEditTools
             {
                 if (!Enum.TryParse<Nature>(nature, true, out var n)) return Error($"Unknown nature: {nature}");
                 var pk = sav.GetBoxSlotAtIndex(box, slot);
-                pk.Nature = n;
+                if (pk.Format < 8)
+                    pk.SetPIDNature(n);
+                else
+                    pk.Nature = n;
                 pk.StatNature = n;
                 sav.SetBoxSlotAtIndex(pk, box, slot);
                 return Ok();
