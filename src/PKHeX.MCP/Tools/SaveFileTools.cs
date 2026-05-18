@@ -162,15 +162,28 @@ public static class SaveFileTools
                         var rawLA = new LegalityAnalysis(candidate);
                         if (!rawLA.Valid) continue;
 
-                        // Save raw state, try overlay, revert on illegality.
+                        // Save raw state, try full overlay, then safe-subset, then revert.
                         var snapshot = candidate.Data.ToArray();
                         candidate.ApplySetDetails(template);
                         var overlayLA = new LegalityAnalysis(candidate);
                         if (!overlayLA.Valid)
                         {
-                            // Revert to raw encounter — legal but without cosmetic overlay.
+                            // Full overlay broke legality (PID/Nature/Moves clash with encounter
+                            // RNG correlation). Revert and apply only the fields that don't
+                            // touch the encounter contract.
                             snapshot.AsSpan().CopyTo(candidate.Data);
                             candidate.RefreshChecksum();
+                            if (template.Level is > 0 and <= 100) candidate.CurrentLevel = (byte)template.Level;
+                            if (template.HeldItem > 0) candidate.HeldItem = template.HeldItem;
+                            if (!string.IsNullOrEmpty(template.Nickname)) { candidate.Nickname = template.Nickname; candidate.IsNicknamed = true; }
+                            for (int i = 0; i < 6; i++) candidate.SetEV(i, template.EVs[i]);
+                            var safeLA = new LegalityAnalysis(candidate);
+                            if (!safeLA.Valid)
+                            {
+                                // Even the safe subset broke it — revert fully to raw encounter.
+                                snapshot.AsSpan().CopyTo(candidate.Data);
+                                candidate.RefreshChecksum();
+                            }
                         }
                         pk = candidate;
                         placed = true;
