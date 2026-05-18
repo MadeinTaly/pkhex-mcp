@@ -43,3 +43,8 @@ Thumbs.db
 # Build artifacts
 publish/
 PublishProfiles/
+
+# Local save fixtures (user data, never commit)
+*.sav
+*.dsv
+*.bak
