@@ -145,10 +145,48 @@ public static class SaveFileTools
                 string method;
                 if (encounters.Count > 0)
                 {
-                    // Encounter-based: produces a save-compatible, fully-populated PKM.
-                    pk = encounters[0].ConvertToPKM(sav);
-                    // Overlay Showdown-driven attributes (IVs/EVs/Nature/Moves/Item/Ball/Nickname/Level)
-                    pk.ApplySetDetails(template);
+                    // Walk encounters until one yields a legal final PKM. Gen3-5 had
+                    // method-based PID/IV correlations; ApplySetDetails can break those, so
+                    // we revert to the raw encounter PKM if the overlay invalidates legality.
+                    pk = sav.BlankPKM;
+                    bool placed = false;
+                    foreach (var enc in encounters)
+                    {
+                        var candidate = enc.ConvertToPKM(sav);
+                        if (candidate.GetType() != sav.BlankPKM.GetType())
+                        {
+                            var conv = EntityConverter.ConvertToType(candidate, sav.BlankPKM.GetType(), out _);
+                            if (conv is null) continue;
+                            candidate = conv;
+                        }
+                        var rawLA = new LegalityAnalysis(candidate);
+                        if (!rawLA.Valid) continue;
+
+                        // Save raw state, try overlay, revert on illegality.
+                        var snapshot = candidate.Data.ToArray();
+                        candidate.ApplySetDetails(template);
+                        var overlayLA = new LegalityAnalysis(candidate);
+                        if (!overlayLA.Valid)
+                        {
+                            // Revert to raw encounter — legal but without cosmetic overlay.
+                            snapshot.AsSpan().CopyTo(candidate.Data);
+                            candidate.RefreshChecksum();
+                        }
+                        pk = candidate;
+                        placed = true;
+                        break;
+                    }
+                    if (!placed)
+                    {
+                        // No encounter produced a legal PKM after the conversion path; fall
+                        // back to first encounter raw (legal at the cost of cosmetic overlay).
+                        pk = encounters[0].ConvertToPKM(sav);
+                        if (pk.GetType() != sav.BlankPKM.GetType())
+                        {
+                            var conv = EntityConverter.ConvertToType(pk, sav.BlankPKM.GetType(), out _);
+                            if (conv is not null) pk = conv;
+                        }
+                    }
                     method = "encounter";
                 }
                 else
