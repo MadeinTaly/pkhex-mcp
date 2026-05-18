@@ -79,20 +79,20 @@ def main():
             sd = ("Pikachu @ Light Ball\n"
                   "Ability: Static\n"
                   "Level: 50\n"
-                  "EVs: 252 SpA / 4 SpD / 252 Spe\n"
-                  "Timid Nature\n"
                   "- Thunderbolt\n"
-                  "- Volt Switch\n"
-                  "- Hidden Power Ice\n"
-                  "- Grass Knot")
+                  "- Quick Attack\n"
+                  "- Iron Tail\n"
+                  "- Volt Tackle")
             imp = m.call("import_showdown", {"box": b, "slot": s, "showdownSet": sd})
             if not imp.get("success"):
-                record("S1_showdown_import", False, f"import: {imp}")
+                record("S1_showdown_legal_import", False, f"import: {imp}")
             else:
                 pk = m.call("get_box_pokemon", {"box": b, "slot": s})
                 lg = m.call("check_legality", {"box": b, "slot": s})
-                ok = (pk.get("success") and "Pikachu" in str(pk.get("species", "")) and lg.get("success"))
-                record("S1_showdown_import", ok, f"species={pk.get('species')!r} legal={lg.get('valid')}")
+                ok = (pk.get("success") and "Pikachu" in str(pk.get("species", ""))
+                      and lg.get("success") and lg.get("valid") is True)
+                record("S1_showdown_legal_import", ok,
+                       f"species={pk.get('species')!r} method={imp.get('method')} legal={lg.get('valid')}")
 
         # S2: AutoFix on a Pokemon we just edited to be broken (level 1 with high-level moves doesn't match EXP)
         # Find a real Pokemon slot

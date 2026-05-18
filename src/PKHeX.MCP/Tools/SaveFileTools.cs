@@ -127,13 +127,46 @@ public static class SaveFileTools
             try
             {
                 var template = new ShowdownSet(showdownSet);
-                // Use a basic approach: create a new PKM with species from template
-                var pk = sav.BlankPKM;
-                pk.ApplySetDetails(template);
-                if (pk.Species == 0)
-                    throw new Exception("Species not found");
+                if (template.Species == 0)
+                    return JsonSerializer.Serialize(new { success = false, error = "Species not found in Showdown set" });
+
+                // Build a stub PKM so EncounterMovesetGenerator can match it.
+                var probe = sav.BlankPKM;
+                probe.ApplySetDetails(template);
+
+                // Generate legal encounters matching this species+moves in the save's game.
+                var moves = new ushort[] { (ushort)template.Moves[0], (ushort)template.Moves[1], (ushort)template.Moves[2], (ushort)template.Moves[3] };
+                // sav.Version can be an umbrella (HGSS, BW, ...). Split into concrete games for generator.
+                var versions = GameUtil.GetVersionsWithinRange(probe, sav.Generation).ToArray();
+                if (versions.Length == 0) versions = new[] { sav.Version };
+                var encounters = EncounterMovesetGenerator.GenerateEncounters(probe, sav, moves, versions).Take(8).ToList();
+
+                PKM pk;
+                string method;
+                if (encounters.Count > 0)
+                {
+                    // Encounter-based: produces a save-compatible, fully-populated PKM.
+                    pk = encounters[0].ConvertToPKM(sav);
+                    // Overlay Showdown-driven attributes (IVs/EVs/Nature/Moves/Item/Ball/Nickname/Level)
+                    pk.ApplySetDetails(template);
+                    method = "encounter";
+                }
+                else
+                {
+                    // No encounter matched: best-effort blank + trainer inheritance.
+                    pk = sav.BlankPKM;
+                    pk.ApplySetDetails(template);
+                    if (pk.OriginalTrainerName.Length == 0) pk.OriginalTrainerName = sav.OT;
+                    pk.TID16 = sav.TID16;
+                    pk.SID16 = sav.SID16;
+                    pk.Language = sav.Language;
+                    pk.Version = sav.Version;
+                    method = "fallback_no_encounter";
+                }
+
                 sav.SetBoxSlotAtIndex(pk, box, slot);
-                return JsonSerializer.Serialize(new { success = true, species = template.Species });
+                var la = new LegalityAnalysis(pk);
+                return JsonSerializer.Serialize(new { success = true, species = pk.Species, method, legal = la.Valid });
             }
             catch (Exception ex)
             {
