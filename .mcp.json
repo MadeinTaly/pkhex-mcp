@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "pkhex": {
+      "command": "pkhex-mcp",
+      "description": "PKHeX save file editor"
+    }
+  }
+}

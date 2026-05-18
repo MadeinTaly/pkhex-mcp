@@ -49,7 +49,7 @@ public static class AutoFixTools
                 var fixLog = new List<string>();
 
                 // --- Fix 1: Sync EXP to level ---
-                var expectedExp = Experience.GetEXP((uint)pk.CurrentLevel, pk.PersonalInfo.EXPGrowth);
+                var expectedExp = Experience.GetEXP((byte)pk.CurrentLevel, pk.PersonalInfo.EXPGrowth);
                 if (pk.EXP != expectedExp)
                 {
                     pk.EXP = expectedExp;
@@ -57,8 +57,11 @@ public static class AutoFixTools
                 }
 
                 // --- Fix 2: Relearn moves ---
-                var suggestedRelearn = MoveListSuggest.GetSuggestedRelearnMoves(new LegalityAnalysis(pk), sav);
-                if (suggestedRelearn.Length > 0)
+                var la_before = new LegalityAnalysis(pk);
+                Span<ushort> relearnBuffer = stackalloc ushort[4];
+                MoveSetApplicator.GetSuggestedRelearnMoves(la_before, relearnBuffer, la_before.EncounterOriginal);
+                var suggestedRelearn = relearnBuffer.ToArray();
+                if (suggestedRelearn.Length > 0 && suggestedRelearn.Any(m => m > 0))
                 {
                     pk.SetRelearnMoves(suggestedRelearn);
                     fixLog.Add($"Fixed relearn moves: {string.Join(", ", suggestedRelearn.Where(m => m > 0).Select(m => strings.movelist[m]))}");
@@ -67,15 +70,21 @@ public static class AutoFixTools
                 // --- Fix 3: Current moves ---
                 var la2 = new LegalityAnalysis(pk);
                 var movesResult = la2.Results.FirstOrDefault(r => r.Identifier == CheckIdentifier.CurrentMove && r.Judgement == Severity.Invalid);
-                if (movesResult != null)
+                if (movesResult.Identifier == CheckIdentifier.CurrentMove)
                 {
-                    var suggested = MoveListSuggest.GetSuggestedCurrentMoves(pk);
+                    Span<ushort> moveBuffer = stackalloc ushort[4];
+                    MoveListSuggest.GetSuggestedCurrentMoves(la2, moveBuffer, MoveSourceType.All);
+                    var suggested = moveBuffer.ToArray();
                     pk.SetMoves(suggested);
                     fixLog.Add($"Fixed moves to: {string.Join(", ", suggested.Where(m => m > 0).Select(m => strings.movelist[m]))}");
                 }
 
                 // --- Fix 4: PP ---
-                pk.SetMaximumPPCurrent();
+                pk.Move1_PP = pk.GetMovePP(pk.Move1, pk.Move1_PPUps);
+                pk.Move2_PP = pk.GetMovePP(pk.Move2, pk.Move2_PPUps);
+                pk.Move3_PP = pk.GetMovePP(pk.Move3, pk.Move3_PPUps);
+                pk.Move4_PP = pk.GetMovePP(pk.Move4, pk.Move4_PPUps);
+                fixLog.Add("Restored PP to maximum");
 
                 // Check after soft fixes
                 var afterSoft = new LegalityAnalysis(pk);
@@ -95,27 +104,7 @@ public static class AutoFixTools
                 // --- Fix 5: Nuclear — regenerate from Showdown ---
                 if (allowNuclearFix)
                 {
-                    var showdown = ShowdownParsing.GetShowdownText(pk);
-                    var template = new ShowdownSet(showdown);
-                    var regenerated = sav.GetLegalFromSet(template).Created;
-                    if (regenerated is not null)
-                    {
-                        var afterNuclear = new LegalityAnalysis(regenerated);
-                        if (afterNuclear.Valid)
-                        {
-                            sav.SetBoxSlotAtIndex(regenerated, box, slot);
-                            fixLog.Add("Regenerated Pokemon legally from Showdown set (PID/EC/met-data changed)");
-                            return JsonSerializer.Serialize(new
-                            {
-                                success = true,
-                                species = speciesName,
-                                now_legal = true,
-                                method = "nuclear_regenerate",
-                                fixed_issues = fixLog,
-                                warning = "PID, EC, met location and date were reset to legal values"
-                            });
-                        }
-                    }
+                    return Error("Nuclear fix (Showdown regeneration) not supported in PKHeX.Core 25.5.18");
                 }
 
                 // Save partial fixes even if still illegal
@@ -156,6 +145,8 @@ public static class AutoFixTools
                 int scanned = 0, alreadyLegal = 0, fixedSoft = 0, fixedNuclear = 0, stillIllegal = 0;
                 var report = new List<object>();
 
+                Span<ushort> relearnBuffer = stackalloc ushort[4];
+                Span<ushort> moveBuffer = stackalloc ushort[4];
                 for (int b = 0; b < sav.BoxCount; b++)
                     for (int s = 0; s < sav.BoxSlotCount; s++)
                     {
@@ -170,23 +161,30 @@ public static class AutoFixTools
                         var fixLog = new List<string>();
 
                         // Fix 1: EXP sync
-                        var expectedExp = Experience.GetEXP((uint)pk.CurrentLevel, pk.PersonalInfo.EXPGrowth);
+                        var expectedExp = Experience.GetEXP((byte)pk.CurrentLevel, pk.PersonalInfo.EXPGrowth);
                         if (pk.EXP != expectedExp) { pk.EXP = expectedExp; fixLog.Add("EXP synced"); }
 
                         // Fix 2: Relearn moves
-                        var suggestedRelearn = MoveListSuggest.GetSuggestedRelearnMoves(new LegalityAnalysis(pk), sav);
-                        if (suggestedRelearn.Length > 0) { pk.SetRelearnMoves(suggestedRelearn); fixLog.Add("Relearn moves fixed"); }
+                        var la_temp = new LegalityAnalysis(pk);
+                        MoveSetApplicator.GetSuggestedRelearnMoves(la_temp, relearnBuffer, la_temp.EncounterOriginal);
+                        var suggestedRelearn = relearnBuffer.ToArray();
+                        if (suggestedRelearn.Any(m => m > 0)) { pk.SetRelearnMoves(suggestedRelearn); fixLog.Add("Relearn moves fixed"); }
 
                         // Fix 3: Current moves
                         var la2 = new LegalityAnalysis(pk);
                         if (la2.Results.Any(r => r.Identifier == CheckIdentifier.CurrentMove && r.Judgement == Severity.Invalid))
                         {
-                            pk.SetMoves(MoveListSuggest.GetSuggestedCurrentMoves(pk));
+                            MoveListSuggest.GetSuggestedCurrentMoves(la2, moveBuffer, MoveSourceType.All);
+                            pk.SetMoves(moveBuffer.ToArray());
                             fixLog.Add("Moves fixed");
                         }
 
                         // Fix 4: PP
-                        pk.SetMaximumPPCurrent();
+                        pk.Move1_PP = pk.GetMovePP(pk.Move1, pk.Move1_PPUps);
+                        pk.Move2_PP = pk.GetMovePP(pk.Move2, pk.Move2_PPUps);
+                        pk.Move3_PP = pk.GetMovePP(pk.Move3, pk.Move3_PPUps);
+                        pk.Move4_PP = pk.GetMovePP(pk.Move4, pk.Move4_PPUps);
+                        fixLog.Add("PP restored");
 
                         var afterSoft = new LegalityAnalysis(pk);
                         if (afterSoft.Valid)
@@ -197,20 +195,10 @@ public static class AutoFixTools
                             continue;
                         }
 
-                        // Fix 5: Nuclear
+                        // Fix 5: Nuclear (not supported in this version)
                         if (allowNuclearFix)
                         {
-                            var showdown = ShowdownParsing.GetShowdownText(pk);
-                            var template = new ShowdownSet(showdown);
-                            var regen = sav.GetLegalFromSet(template).Created;
-                            if (regen is not null && new LegalityAnalysis(regen).Valid)
-                            {
-                                sav.SetBoxSlotAtIndex(regen, b, s);
-                                fixedNuclear++;
-                                fixLog.Add("Regenerated (nuclear)");
-                                report.Add(new { box = b, slot = s, species = speciesName, result = "fixed_nuclear", fixes = fixLog });
-                                continue;
-                            }
+                            // Nuclear fix not supported in PKHeX.Core 25.5.18
                         }
 
                         // Still illegal

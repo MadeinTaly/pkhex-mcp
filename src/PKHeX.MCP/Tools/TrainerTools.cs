@@ -65,8 +65,8 @@ public static class TrainerTools
                         species = strings.specieslist[pk.Species],
                         nickname = pk.Nickname,
                         level = pk.CurrentLevel,
-                        hp = pk.Stat_HP,
-                        max_hp = pk.MaxHP,
+                        hp = pk.Stat_HPCurrent,
+                        max_hp = pk.Stat_HPMax,
                         status = pk.Status_Condition == 0 ? "Healthy" : pk.Status_Condition.ToString(),
                         shiny = pk.IsShiny,
                         nature = pk.Nature.ToString(),
@@ -96,8 +96,12 @@ public static class TrainerTools
                 for (int i = 0; i < sav.PartyCount; i++)
                 {
                     var pk = sav.GetPartySlotAtIndex(i);
-                    pk.Stat_HP = pk.MaxHP;
-                    pk.SetMaximumPPCurrent();
+                    pk.Stat_HPCurrent = pk.Stat_HPMax;
+                    // Restore all PP to max
+                    pk.Move1_PP = pk.GetMovePP(pk.Move1, pk.Move1_PPUps);
+                    pk.Move2_PP = pk.GetMovePP(pk.Move2, pk.Move2_PPUps);
+                    pk.Move3_PP = pk.GetMovePP(pk.Move3, pk.Move3_PPUps);
+                    pk.Move4_PP = pk.GetMovePP(pk.Move4, pk.Move4_PPUps);
                     pk.Status_Condition = 0;
                     sav.SetPartySlotAtIndex(pk, i);
                 }
@@ -155,25 +159,30 @@ public static class TrainerTools
         {
             try
             {
-                if (sav is not IPokedex dex)
-                    return Error("This save type does not support Pokedex access");
+                if (!sav.HasPokeDex)
+                    return Error("This save file does not have a Pokedex");
 
-                int seen = 0, caught = 0;
-                int max = sav.MaxSpeciesID;
-                for (int i = 1; i <= max; i++)
+                // Try to access Dex property (works for some games like SAV4)
+                var dexProp = sav.GetType().GetProperty("Dex", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+                if (dexProp != null && dexProp.GetValue(sav) is { } dex)
                 {
-                    if (dex.GetSeen(i)) seen++;
-                    if (dex.GetCaught(i)) caught++;
+                    var seenProp = dex.GetType().GetProperty("SeenCount");
+                    var caughtProp = dex.GetType().GetProperty("CaughtCount");
+                    if (seenProp != null && caughtProp != null)
+                    {
+                        int seen = (int)(seenProp.GetValue(dex) ?? 0);
+                        int caught = (int)(caughtProp.GetValue(dex) ?? 0);
+                        return JsonSerializer.Serialize(new
+                        {
+                            success = true,
+                            seen = seen,
+                            caught = caught,
+                            completion_percent = sav.MaxSpeciesID > 0 ? Math.Round(caught * 100.0 / sav.MaxSpeciesID, 1) : 0
+                        });
+                    }
                 }
-                return JsonSerializer.Serialize(new
-                {
-                    success = true,
-                    seen,
-                    caught,
-                    total_species = max,
-                    seen_percent = Math.Round(seen * 100.0 / max, 1),
-                    caught_percent = Math.Round(caught * 100.0 / max, 1)
-                });
+
+                return Error("Pokedex data cannot be accessed for this game format");
             }
             catch (Exception ex) { return Error(ex.Message); }
         }) ?? Error("No save file loaded");
@@ -190,11 +199,27 @@ public static class TrainerTools
             {
                 var pk = sav.GetBoxSlotAtIndex(box, slot);
                 if (pk.Species == 0) return Error("Slot is empty");
-                var ribbons = RibbonInfo.GetRibbonResults(pk)
-                    .Where(r => r.HasRibbon)
-                    .Select(r => r.Name)
-                    .ToList();
-                return JsonSerializer.Serialize(new { success = true, count = ribbons.Count, ribbons });
+
+                // Get ribbon info list
+                var ribbonList = RibbonInfo.GetRibbonInfo(pk);
+                var ribbons = new List<object>();
+
+                int index = 0;
+                foreach (var ri in ribbonList)
+                {
+                    if (ri.HasRibbon)
+                    {
+                        ribbons.Add(new { index = index, name = $"Ribbon_{index}", count = ri.RibbonCount });
+                    }
+                    index++;
+                }
+
+                return JsonSerializer.Serialize(new
+                {
+                    success = true,
+                    ribbon_count = ribbons.Count,
+                    ribbons = ribbons
+                });
             }
             catch (Exception ex) { return Error(ex.Message); }
         }) ?? Error("No save file loaded");
@@ -251,7 +276,7 @@ public static class TrainerTools
         try
         {
             var balls = Enum.GetValues<Ball>()
-                .Where(b => b != Ball.None && b != Ball.Undefined)
+                .Where(b => b != Ball.None && (int)b != 0)
                 .Select(b => new { id = (int)b, name = b.ToString() })
                 .ToList();
             return JsonSerializer.Serialize(new { success = true, balls });

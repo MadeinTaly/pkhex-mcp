@@ -37,11 +37,14 @@ public static class BoxTools
                         ability = strings.abilitylist[pk.Ability],
                     });
                 }
+                var boxName = $"Box {box + 1}";
+                if (sav is IBoxDetailName b)
+                    boxName = b.GetBoxName(box);
                 return JsonSerializer.Serialize(new
                 {
                     success = true,
                     box,
-                    box_name = sav.GetBoxName(box),
+                    box_name = boxName,
                     pokemon = slots
                 });
             }
@@ -58,7 +61,12 @@ public static class BoxTools
             {
                 var strings = GameInfo.GetStrings("en");
                 var all = new List<object>();
+                var boxDetailName = sav as IBoxDetailName;
                 for (int b = 0; b < sav.BoxCount; b++)
+                {
+                    var boxName = $"Box {b + 1}";
+                    if (boxDetailName != null)
+                        boxName = boxDetailName.GetBoxName(b);
                     for (int s = 0; s < sav.BoxSlotCount; s++)
                     {
                         var pk = sav.GetBoxSlotAtIndex(b, s);
@@ -66,7 +74,7 @@ public static class BoxTools
                         all.Add(new
                         {
                             box = b, slot = s,
-                            box_name = sav.GetBoxName(b),
+                            box_name = boxName,
                             species = strings.specieslist[pk.Species],
                             nickname = pk.Nickname,
                             level = pk.CurrentLevel,
@@ -74,6 +82,7 @@ public static class BoxTools
                             is_egg = pk.IsEgg,
                         });
                     }
+                }
                 return JsonSerializer.Serialize(new { success = true, total = all.Count, pokemon = all });
             }
             catch (Exception ex) { return Error(ex.Message); }
@@ -109,7 +118,14 @@ public static class BoxTools
         {
             try
             {
-                var names = Enumerable.Range(0, sav.BoxCount).Select(i => new { box = i, name = sav.GetBoxName(i) }).ToList();
+                var names = new List<object>();
+                for (int i = 0; i < sav.BoxCount; i++)
+                {
+                    string boxName = i.ToString();
+                    if (sav is IBoxDetailName b)
+                        boxName = b.GetBoxName(i);
+                    names.Add(new { box = i, name = boxName });
+                }
                 return JsonSerializer.Serialize(new { success = true, boxes = names });
             }
             catch (Exception ex) { return Error(ex.Message); }
@@ -124,8 +140,19 @@ public static class BoxTools
         return ctx.WithWrite(sav =>
         {
             if (sav is null) return Error("No save file loaded");
-            try { sav.SetBoxName(box, name); return Ok(); }
-            catch (Exception ex) { return Error(ex.Message); }
+            try
+            {
+                if (sav is IBoxDetailName b)
+                {
+                    b.SetBoxName(box, name);
+                    return Ok();
+                }
+                return Error("Box renaming not supported for this game format");
+            }
+            catch (Exception ex)
+            {
+                return Error(ex.Message);
+            }
         });
     }
 
@@ -220,14 +247,14 @@ public static class BoxTools
             try
             {
                 var lines = instructions.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-                var parsed = StringInstruction.GetFilters(lines);
+                var parsed = StringInstruction.GetFilters((IReadOnlyList<string>)lines);
                 int modified = 0;
                 for (int b = 0; b < sav.BoxCount; b++)
                     for (int s = 0; s < sav.BoxSlotCount; s++)
                     {
                         var pk = sav.GetBoxSlotAtIndex(b, s);
                         if (pk.Species == 0) continue;
-                        BatchEditing.ApplyBatchInstruction(pk, parsed);
+                        BatchEditing.TryModify(pk, parsed, parsed);
                         sav.SetBoxSlotAtIndex(pk, b, s);
                         modified++;
                     }
@@ -248,13 +275,13 @@ public static class BoxTools
             try
             {
                 var lines = instructions.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-                var parsed = StringInstruction.GetFilters(lines);
+                var parsed = StringInstruction.GetFilters((IReadOnlyList<string>)lines);
                 int modified = 0;
                 for (int s = 0; s < sav.BoxSlotCount; s++)
                 {
                     var pk = sav.GetBoxSlotAtIndex(box, s);
                     if (pk.Species == 0) continue;
-                    BatchEditing.ApplyBatchInstruction(pk, parsed);
+                    BatchEditing.TryModify(pk, parsed, parsed);
                     sav.SetBoxSlotAtIndex(pk, box, s);
                     modified++;
                 }

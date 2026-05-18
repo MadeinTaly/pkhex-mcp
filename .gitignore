@@ -31,6 +31,7 @@ bld/
 # NuGet
 *.nupkg
 *.snupkg
+nupkg/
 
 # Local tools
 .dotnet/

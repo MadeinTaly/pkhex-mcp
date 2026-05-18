@@ -64,7 +64,7 @@ public static class SaveFileTools
                     shiny = pk.IsShiny,
                     is_egg = pk.IsEgg,
                     ball = (Ball)pk.Ball,
-                    ot = pk.OT_Name,
+                    ot = pk.OriginalTrainerName,
                     moves = new[]
                     {
                         strings.movelist[pk.Move1],
@@ -127,8 +127,12 @@ public static class SaveFileTools
             try
             {
                 var template = new ShowdownSet(showdownSet);
-                var pk = sav.GetLegalFromSet(template);
-                sav.SetBoxSlotAtIndex(pk.Species != 0 ? pk : throw new Exception("Species not found"), box, slot);
+                // Use a basic approach: create a new PKM with species from template
+                var pk = sav.BlankPKM;
+                pk.ApplySetDetails(template);
+                if (pk.Species == 0)
+                    throw new Exception("Species not found");
+                sav.SetBoxSlotAtIndex(pk, box, slot);
                 return JsonSerializer.Serialize(new { success = true, species = template.Species });
             }
             catch (Exception ex)

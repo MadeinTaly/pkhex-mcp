@@ -85,8 +85,8 @@ public static class PokemonEditTools
             try
             {
                 var pk = sav.GetBoxSlotAtIndex(box, slot);
-                pk.CurrentLevel = level;
-                pk.EXP = Experience.GetEXP((uint)level, pk.PersonalInfo.EXPGrowth);
+                pk.CurrentLevel = (byte)level;
+                pk.EXP = Experience.GetEXP((byte)level, pk.PersonalInfo.EXPGrowth);
                 sav.SetBoxSlotAtIndex(pk, box, slot);
                 return Ok();
             }
@@ -134,7 +134,7 @@ public static class PokemonEditTools
             {
                 var pk = sav.GetBoxSlotAtIndex(box, slot);
                 if (shiny) pk.SetShiny();
-                else pk.PID = PKX.GetRandomPID(Util.Rand, pk.Species, pk.Gender, pk.Version, pk.Nature, pk.Form, pk.PID);
+                else pk.PID = EntityPID.GetRandomPID(Util.Rand, pk.Species, pk.Gender, pk.Version, pk.Nature, pk.Form, pk.PID);
                 sav.SetBoxSlotAtIndex(pk, box, slot);
                 return Ok();
             }
@@ -170,7 +170,11 @@ public static class PokemonEditTools
                 if (m4 < 0) return Error($"Move not found: {move4}");
                 var pk = sav.GetBoxSlotAtIndex(box, slot);
                 pk.Move1 = (ushort)m1; pk.Move2 = (ushort)m2; pk.Move3 = (ushort)m3; pk.Move4 = (ushort)m4;
-                pk.SetMaximumPPCurrent();
+                // Restore PP to max for each move
+                pk.Move1_PP = pk.GetMovePP((ushort)m1, pk.Move1_PPUps);
+                pk.Move2_PP = pk.GetMovePP((ushort)m2, pk.Move2_PPUps);
+                pk.Move3_PP = pk.GetMovePP((ushort)m3, pk.Move3_PPUps);
+                pk.Move4_PP = pk.GetMovePP((ushort)m4, pk.Move4_PPUps);
                 sav.SetBoxSlotAtIndex(pk, box, slot);
                 return Ok();
             }
@@ -233,8 +237,12 @@ public static class PokemonEditTools
             try
             {
                 var pk = sav.GetBoxSlotAtIndex(box, slot);
-                pk.Stat_HP = pk.MaxHP;
-                pk.SetMaximumPPCurrent();
+                pk.Stat_HPCurrent = pk.Stat_HPMax;
+                // Restore all PP to max
+                pk.Move1_PP = pk.GetMovePP(pk.Move1, pk.Move1_PPUps);
+                pk.Move2_PP = pk.GetMovePP(pk.Move2, pk.Move2_PPUps);
+                pk.Move3_PP = pk.GetMovePP(pk.Move3, pk.Move3_PPUps);
+                pk.Move4_PP = pk.GetMovePP(pk.Move4, pk.Move4_PPUps);
                 pk.Status_Condition = 0;
                 sav.SetBoxSlotAtIndex(pk, box, slot);
                 return Ok();
@@ -290,8 +298,8 @@ public static class PokemonEditTools
             try
             {
                 var pk = sav.GetBoxSlotAtIndex(box, slot);
-                pk.OT_Name = otName;
-                pk.OT_Gender = otGender;
+                pk.OriginalTrainerName = otName;
+                pk.OriginalTrainerGender = (byte)otGender;
                 sav.SetBoxSlotAtIndex(pk, box, slot);
                 return Ok();
             }
@@ -310,7 +318,7 @@ public static class PokemonEditTools
             try
             {
                 var pk = sav.GetBoxSlotAtIndex(box, slot);
-                pk.CurrentFriendship = value;
+                pk.CurrentFriendship = (byte)value;
                 sav.SetBoxSlotAtIndex(pk, box, slot);
                 return Ok();
             }
@@ -342,7 +350,7 @@ public static class PokemonEditTools
                     shiny = pk.IsShiny,
                     friendship = pk.CurrentFriendship,
                     gender = pk.Gender == 0 ? "M" : pk.Gender == 1 ? "F" : "N",
-                    ot = pk.OT_Name,
+                    ot = pk.OriginalTrainerName,
                     ball = (Ball)pk.Ball,
                     language = pk.Language,
                     exp = pk.EXP,
@@ -355,7 +363,7 @@ public static class PokemonEditTools
                     },
                     ivs = new { hp = pk.IV_HP, atk = pk.IV_ATK, def = pk.IV_DEF, spa = pk.IV_SPA, spd = pk.IV_SPD, spe = pk.IV_SPE },
                     evs = new { hp = pk.EV_HP, atk = pk.EV_ATK, def = pk.EV_DEF, spa = pk.EV_SPA, spd = pk.EV_SPD, spe = pk.EV_SPE },
-                    stats = new { hp = pk.Stat_HP, atk = pk.Stat_ATK, def = pk.Stat_DEF, spa = pk.Stat_SPA, spd = pk.Stat_SPD, spe = pk.Stat_SPE },
+                    stats = new { hp = pk.Stat_HPCurrent, atk = pk.Stat_ATK, def = pk.Stat_DEF, spa = pk.Stat_SPA, spd = pk.Stat_SPD, spe = pk.Stat_SPE },
                 });
             }
             catch (Exception ex) { return Error(ex.Message); }

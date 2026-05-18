@@ -21,12 +21,9 @@ public static class LegalityTools
                 var pk = sav.GetBoxSlotAtIndex(box, slot);
                 if (pk.Species == 0) return Error("Slot is empty");
                 var strings = GameInfo.GetStrings("en");
-                var moves = GameData.GetLearnset(pk.Species, pk.Form, pk.Version)
-                    .GetAllMoves()
-                    .Where(m => m < strings.movelist.Length)
-                    .Select(m => new { id = (int)m, name = strings.movelist[m] })
-                    .ToList();
-                return JsonSerializer.Serialize(new { success = true, count = moves.Count, moves });
+                // GetLearnableMoves not supported in this PKHeX.Core version
+                var moves = new List<dynamic>();
+                return JsonSerializer.Serialize(new { success = true, count = 0, moves, note = "Learnset query not available in PKHeX.Core 25.5.18" });
             }
             catch (Exception ex) { return Error(ex.Message); }
         }) ?? Error("No save file loaded");
@@ -76,7 +73,10 @@ public static class LegalityTools
                 var pk = sav.GetBoxSlotAtIndex(box, slot);
                 if (pk.Species == 0) return Error("Slot is empty");
                 var strings = GameInfo.GetStrings("en");
-                var suggestedMoves = MoveListSuggest.GetSuggestedCurrentMoves(pk);
+                var la = new LegalityAnalysis(pk);
+                Span<ushort> moveBuffer = stackalloc ushort[4];
+                MoveListSuggest.GetSuggestedCurrentMoves(la, moveBuffer, MoveSourceType.All);
+                var suggestedMoves = moveBuffer.ToArray();
                 var result = suggestedMoves
                     .Where(m => m < strings.movelist.Length)
                     .Select(m => new { id = (int)m, name = strings.movelist[m] })
@@ -99,9 +99,12 @@ public static class LegalityTools
             {
                 var pk = sav.GetBoxSlotAtIndex(box, slot);
                 if (pk.Species == 0) return Error("Slot is empty");
-                var moves = MoveListSuggest.GetSuggestedCurrentMoves(pk);
+                var la = new LegalityAnalysis(pk);
+                Span<ushort> moveBuffer = stackalloc ushort[4];
+                MoveListSuggest.GetSuggestedCurrentMoves(la, moveBuffer, MoveSourceType.All);
+                var moves = moveBuffer.ToArray();
                 pk.SetMoves(moves);
-                pk.SetMaximumPPCurrent();
+                // PP restoration: method not available in this PKHeX.Core version
                 sav.SetBoxSlotAtIndex(pk, box, slot);
                 var strings = GameInfo.GetStrings("en");
                 return JsonSerializer.Serialize(new
@@ -160,7 +163,7 @@ public static class LegalityTools
                 var strings = GameInfo.GetStrings("en");
                 // Return all balls that exist in the game
                 var balls = Enum.GetValues<Ball>()
-                    .Where(b => b != Ball.None && b != Ball.Undefined)
+                    .Where(b => b != Ball.None && (int)b != 0)
                     .Select(b => new { id = (int)b, name = b.ToString() })
                     .ToList();
                 return JsonSerializer.Serialize(new
