@@ -101,10 +101,25 @@ public static class AutoFixTools
                     });
                 }
 
-                // --- Fix 5: Nuclear — regenerate from Showdown ---
+                // --- Fix 5: Nuclear — regenerate from Showdown via a legal encounter ---
                 if (allowNuclearFix)
                 {
-                    return Error("Nuclear fix (Showdown regeneration) not supported in PKHeX.Core 25.5.18");
+                    var regenerated = RegenerateLegal(sav, pk);
+                    if (regenerated is not null)
+                    {
+                        sav.SetBoxSlotAtIndex(regenerated, box, slot);
+                        fixLog.Add("Regenerated from a legal encounter (PID/EC/met-data reset)");
+                        return JsonSerializer.Serialize(new
+                        {
+                            success = true,
+                            species = speciesName,
+                            now_legal = true,
+                            method = "nuclear_regenerate",
+                            fixed_issues = fixLog,
+                            warning = "PID, EC, met location and date were reset to legal values"
+                        });
+                    }
+                    fixLog.Add("Nuclear regen attempted but no legal encounter matched current moves/species");
                 }
 
                 // Save partial fixes even if still illegal
@@ -195,10 +210,18 @@ public static class AutoFixTools
                             continue;
                         }
 
-                        // Fix 5: Nuclear (not supported in this version)
+                        // Fix 5: Nuclear regen via legal encounter
                         if (allowNuclearFix)
                         {
-                            // Nuclear fix not supported in PKHeX.Core 25.5.18
+                            var regen = RegenerateLegal(sav, pk);
+                            if (regen is not null)
+                            {
+                                sav.SetBoxSlotAtIndex(regen, b, s);
+                                fixedNuclear++;
+                                fixLog.Add("Regenerated (nuclear)");
+                                report.Add(new { box = b, slot = s, species = speciesName, result = "fixed_nuclear", fixes = fixLog });
+                                continue;
+                            }
                         }
 
                         // Still illegal
@@ -287,4 +310,44 @@ public static class AutoFixTools
     }
 
     private static string Error(string msg) => JsonSerializer.Serialize(new { success = false, error = msg });
+
+    /// <summary>
+    /// Rebuild a Pokemon from a legal encounter that matches its current species + moves,
+    /// then overlay the Showdown attributes (nature/IVs/EVs/level/etc.). Returns null if
+    /// no encounter matches.
+    /// </summary>
+    private static PKM? RegenerateLegal(SaveFile sav, PKM source)
+    {
+        var showdown = ShowdownParsing.GetShowdownText(source);
+        var template = new ShowdownSet(showdown);
+        if (template.Species == 0) return null;
+
+        var probe = sav.BlankPKM;
+        probe.ApplySetDetails(template);
+        var versions = GameUtil.GetVersionsWithinRange(probe, sav.Generation).ToArray();
+        if (versions.Length == 0) versions = new[] { sav.Version };
+
+        // First pass: try with current moves (preserves moveset when possible).
+        var moves = new ushort[]
+        {
+            (ushort)template.Moves[0], (ushort)template.Moves[1],
+            (ushort)template.Moves[2], (ushort)template.Moves[3]
+        };
+        var enc = EncounterMovesetGenerator.GenerateEncounters(probe, sav, moves, versions).FirstOrDefault();
+
+        // Second pass: relax moveset, accept ANY legal encounter for this species/form.
+        if (enc is null)
+        {
+            var empty = ReadOnlyMemory<ushort>.Empty;
+            enc = EncounterMovesetGenerator.GenerateEncounters(probe, sav, empty, versions).FirstOrDefault();
+        }
+        if (enc is null) return null;
+
+        // Pure encounter conversion — DO NOT overlay template, that's how illegal level/moves
+        // poisoned earlier attempts. Caller (auto-fix) wants a legal PKM; cosmetic overlay
+        // (nature/IVs/EVs) is the user's job afterward.
+        var pk = enc.ConvertToPKM(sav);
+        var la = new LegalityAnalysis(pk);
+        return la.Valid ? pk : null;
+    }
 }

@@ -11,6 +11,8 @@ Scenarios:
   S5  Copy: copy_pokemon -> dst now has same species as src
   S6  Negative: invalid base64 -> success=false, no crash
   S7  Negative: out-of-range box -> success=false, no crash
+  S8  Nuclear regen: import legal Pikachu, hard-break, allowNuclearFix
+       -> Pokemon ends up legal again
 """
 from __future__ import annotations
 import base64, json, os, subprocess, sys
@@ -146,6 +148,23 @@ def main():
         # S7: Negative — out-of-range box
         oob = m.call("get_box_pokemon", {"box": 999, "slot": 0})
         record("S7_oob_box", oob.get("success") is False, oob.get("error", "")[:120])
+
+        # S8: Nuclear regen recovers a hard-broken Pokemon
+        boxes2 = m.call("get_all_boxes", {})
+        used2 = {(p["box"], p["slot"]) for p in boxes2.get("pokemon", [])}
+        empty = next(((bb, ss) for bb in range(18) for ss in range(30) if (bb, ss) not in used2), None)
+        if empty:
+            nb, nss = empty
+            sd = "Pikachu @ Light Ball\nAbility: Static\nLevel: 50\n- Thunderbolt\n- Quick Attack\n- Iron Tail\n- Volt Tackle"
+            m.call("import_showdown", {"box": nb, "slot": nss, "showdownSet": sd})
+            m.call("set_level", {"box": nb, "slot": nss, "level": 1})
+            m.call("set_moves", {"box": nb, "slot": nss, "move1": "Splash", "move2": "Splash", "move3": "Splash", "move4": "Splash"})
+            broken = m.call("check_legality", {"box": nb, "slot": nss})
+            fix = m.call("auto_fix_pokemon", {"box": nb, "slot": nss, "allowNuclearFix": True})
+            after = m.call("check_legality", {"box": nb, "slot": nss})
+            record("S8_nuclear_regen",
+                   broken.get("valid") is False and after.get("valid") is True and fix.get("method") == "nuclear_regenerate",
+                   f"broken={broken.get('valid')} method={fix.get('method')} after={after.get('valid')}")
 
     finally:
         m.close()
