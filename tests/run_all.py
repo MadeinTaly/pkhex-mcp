@@ -13,6 +13,7 @@ TESTS = [
     "mcp_scenarios.py",
     "mcp_nuclear.py",
     "mcp_stress.py",
+    "mcp_massfix.py",
 ]
 
 failed = []
