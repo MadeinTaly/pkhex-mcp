@@ -118,6 +118,17 @@ What each script does:
 | `dump_schema.py NAME ...` | Prints the input-schema property names for given tools (handy when adapting to PKHeX.Core API drift). |
 | `Probe/` | One-shot .NET console that lists matching PKHeX.Core types/methods via reflection. |
 
+## Continuing in a new Claude Code session
+
+The MCP server is registered both in this repo's `.mcp.json` and in the
+per-user `~/.claude.json`, so a fresh Claude Code session opened in
+`D:\Dev\pkhex-mcp` picks up the `pkhex_*` tools automatically. The
+currently running session needs a restart to see them — MCP servers are
+spawned at session init.
+
+See `CLAUDE.md` in the repo root for project memory: build/install loop,
+API-drift quirks, conventions, and a map of the codebase.
+
 ## License
 
 GPL-3.0-or-later. This project uses [PKHeX.Core](https://github.com/kwsch/PKHeX) by kwsch, also GPL-3.0.
