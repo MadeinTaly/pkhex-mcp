@@ -14,6 +14,7 @@ TESTS = [
     "mcp_nuclear.py",
     "mcp_stress.py",
     "mcp_massfix.py",
+    "mcp_deep.py",
 ]
 
 failed = []

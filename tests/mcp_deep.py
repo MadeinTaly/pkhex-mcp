@@ -98,10 +98,8 @@ def main():
         call("set_ot",         {"box": eb, "slot": es, "otName": "DEEP", "otGender": 1})
         call("max_i_vs",       {"box": eb, "slot": es})
         call("set_e_vs",       {"box": eb, "slot": es, "hp": 252, "atk": 4, "def": 0, "spa": 0, "spd": 0, "spe": 252})
-        call("set_moves",      {"box": eb, "slot": es, "move1": "Earthquake", "move2": "Crunch", "move3": "Stone Edge", "move4": "Iron Head"})
-        call("heal_pokemon",   {"box": eb, "slot": es})  # full HP + PP
 
-        # --- copy_pokemon ---
+        # --- copy_pokemon (before set_moves on edit slot so copy reflects pre-move state too) ---
         src_species_before_copy = used[(eb, es)]["species"]
         call("copy_pokemon",   {"fromBox": eb, "fromSlot": es, "toBox": cb, "toSlot": cs})
 
@@ -114,10 +112,16 @@ def main():
 
         # --- batch_edit_box: set Move1=Tackle on every Pokemon in batch_box ---
         # (Move1 is a simple ushort property; bypasses nature/PID quirks.)
+        # NOTE: batch_box == edit_b, so this also touches the edit slot's Move1.
+        # We set the edit slot's moves AFTER this so the explicit set wins.
         call("batch_edit_box", {"box": batch_box, "instructions": ".Move1=33"})  # 33 = Tackle
 
         # --- batch_edit_all: bump CurrentFriendship=180 ---
         call("batch_edit_all", {"instructions": ".CurrentFriendship=180"})
+
+        # --- set_moves on edit slot AFTER batch ops so explicit moves win ---
+        call("set_moves",      {"box": eb, "slot": es, "move1": "Earthquake", "move2": "Crunch", "move3": "Stone Edge", "move4": "Iron Head"})
+        call("heal_pokemon",   {"box": eb, "slot": es})  # full HP + PP
 
         # --- delete_pokemon: clear the copy destination ---
         # (skip — we want to keep copy_dst occupied for post-reload verify)
@@ -177,14 +181,19 @@ def main():
         # batch_edit_box: every Pokemon in batch_box has Move1=Tackle (id 33)
         box = call("get_box", {"box": batch_box})
         non_empty = [x for x in box["pokemon"] if not x.get("empty")]
-        # get_box doesn't expose moves; query each slot
+        # get_box doesn't expose moves; query each slot.
+        # Skip the edit slot — set_moves runs after batch_edit_box so its Move1 is Earthquake by design.
+        checked = 0
         for x in non_empty:
+            if (batch_box, x["slot"]) == (eb, es):
+                continue
             slot_pk = call("get_box_pokemon", {"box": batch_box, "slot": x["slot"]})
             first_move = (slot_pk.get("moves") or [None])[0]
             if first_move != "Tackle":
                 fails.append(f"batch_edit_box_move1_slot_{x['slot']}: got {first_move!r}")
-        if non_empty:
-            print(f"  OK   batch_edit_box_move1 on {len(non_empty)} pokemon")
+            checked += 1
+        if checked:
+            print(f"  OK   batch_edit_box_move1 on {checked} pokemon")
     finally:
         p.stdin.close()
         try: p.wait(timeout=5)
